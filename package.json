@@ -1,0 +1,24 @@
+{
+    "name": "admsdataprocessor",
+    "description": "Converts GeoJSON from ABB ADMS into a graph for tracing",
+    "version": "0.0.1",
+    "author": {
+        "name": "Phil Robinson",
+        "email": "phillip.robinson@gb.abb.com"
+    },
+    "dependencies": {
+        "express": "^4.16.3",
+        "fs": "0.0.1-security",
+        "lokijs": "^1.5.5",
+        "path": "^0.12.7",
+        "request": "^2.88.0",
+        "url-pattern": "^1.0.3"
+    },
+    "engines": {
+        "node": ">0.10.45",
+        "npm": "3.10.2"
+    },
+    "scripts": {
+      "start": "node server.js"
+    }
+}

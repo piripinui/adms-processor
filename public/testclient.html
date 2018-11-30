@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>ADMS Network Data Viewer</title>
+    <link rel="stylesheet" href="ol.css" type="text/css">
+    <link rel="icon" href="abb-logo.jpg">
+    <script src="http://cdn.polyfill.io/v2/polyfill.min.js?features=requestAnimationFrame,Element.prototype.classList,URL"></script>
+    <!--script src="http://openlayers.org/en/v5.2.0/build/ol.js"></script-->
+    <script src="https://cdn.rawgit.com/openlayers/openlayers.github.io/master/en/v5.2.0/build/ol.js"></script>
+    <link rel="stylesheet" href="https://cdn.rawgit.com/openlayers/openlayers.github.io/master/en/v5.2.0/css/ol.css">
+    <script src="jquery-3.3.1.min.js"></script>
+    <script src='https://npmcdn.com/@turf/turf/turf.min.js'></script>
+    <script src='jstree.min.js'></script>
+    <link rel="stylesheet" href="style.min.css" />
+    <style>
+      #map {
+        position: absolute;
+        width: 70%;
+        z-index: 998;
+        height: 100%;
+      }
+
+      #info {
+        position: absolute;
+        margin-left: 70%;
+        margin-top: 10px;
+        padding: 5px;
+        width: 30%;
+        z-index: 999;
+        font-family: "Arial";
+        font-size: 15px;
+      }
+
+      #search {
+        position: absolute;
+        margin-left: 70%;
+        margin-top: 30%;
+        z-index: 999;
+        padding: 5px;
+        font-family: "Arial";
+      }
+
+      #meters {
+        position: absolute;
+        margin-left: 70%;
+        margin-top: 23%;
+        padding: 5px;
+        width: 30%;
+        z-index: 999;
+        font-family: "Arial";
+        font-size: 15px;
+      }
+
+      #addmeter {
+        position: absolute;
+        margin-left: 70%;
+        margin-top: 24%;
+        padding: 5px;
+        z-index: 999;
+        font-family: "Arial";
+        font-size: 15px;
+      }
+
+      #noaddmeter {
+        position: absolute;
+        margin-left: 70%;
+        margin-top: 26%;
+        padding: 5px;
+        z-index: 999;
+        font-family: "Arial";
+        font-size: 15px;
+      }
+
+      #reload {
+        position: absolute;
+        margin-left: 70%;
+        margin-top: 28%;
+        padding: 5px;
+        z-index: 999;
+        font-family: "Arial";
+        font-size: 15px;
+      }
+
+      #jstree {
+        position: absolute;
+        margin-top: 25%;
+        padding: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map-container">
+      <div id="map" class="map"></div>
+      <div id="infopane">
+        <div id="info"></div>
+        <span id="meters"></span>
+        <!--button id="addmeter">Add Meter</button>
+        <button id="noaddmeter">Stop adding Meters</button>
+        <button id="reload">Reload</button-->
+        <div id="search" action="/gridelements">
+          Id: <input id="idinput" type="text" name="id" value=""><br>
+          <input id="submit" type="submit" value="Submit">
+          <button id="tracedownstream">Trace downstream</button>
+          <div id="jstree">
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      nodeSource = new ol.source.Vector({
+        wrapX: false,
+        format: new ol.format.GeoJSON({
+          featureProjection: 'EPSG:3857',
+          dataProjection: 'EPSG:4326'
+        }),
+        loader: function(extent, resolution, projection) {
+          $.ajax({
+        		url : "/gridelements",
+        		type : "GET",
+        		contentType : "application/json; charset=utf-8",
+        		dataType : "json",
+        		success : function (data) {
+        			nodeSource.addFeatures(nodeSource.getFormat().readFeatures(data));
+        		},
+        		error: function(err) {
+        			console.log("There was an error fetching nodes");
+        		}
+        	});
+        }
+      });
+
+      lineSource = new ol.source.Vector({
+        wrapX: false,
+        format: new ol.format.GeoJSON({
+          featureProjection: 'EPSG:3857',
+          dataProjection: 'EPSG:4326'
+        }),
+        loader: function(extent, resolution, projection) {
+          $.ajax({
+            url : "/lines",
+            type : "GET",
+            contentType : "application/json; charset=utf-8",
+            dataType : "json",
+            success : function (data) {
+              lineSource.addFeatures(lineSource.getFormat().readFeatures(data));
+            },
+            error: function(err) {
+              console.log("There was an error fetching lines");
+            }
+          });
+        }
+      });
+
+      traceSource = new ol.source.Vector({
+        format: new ol.format.GeoJSON({
+          featureProjection: 'EPSG:3857',
+          dataProjection: 'EPSG:4326'
+        })
+      });
+
+      var defaultLineStyle = new ol.style.Style({
+        fill: new ol.style.Fill({
+          color: 'rgba(255, 255, 255, 0.6)'
+        }),
+        stroke: new ol.style.Stroke({
+          color: '#319FD3',
+          width: 2
+        })
+      });
+
+      var traceStyle = new ol.style.Style({
+        fill: new ol.style.Fill({
+          color: 'red'
+        }),
+        stroke: new ol.style.Stroke({
+          color: 'red',
+          width: 2
+        })
+      });
+
+      // Define a catelogue of point styles for common device types.
+      var pointStyles = {
+        Transformer: new ol.style.Style({
+          image: new ol.style.Icon({
+            src: 'triangle_green.png',
+            scale: 0.02
+          })
+        }),
+        Switch: new ol.style.Style({
+          image: new ol.style.Icon({
+            src: 'round_purple.png',
+            scale: 0.02
+          })
+        }),
+        Switch_Open: new ol.style.Style({
+          image: new ol.style.Icon({
+            src: 'square_red.png',
+            scale: 0.1
+          })
+        }),
+        Switch_Closed: new ol.style.Style({
+          image: new ol.style.Icon({
+            src: 'square_green.png',
+            scale: 0.1
+          })
+        }),
+        Load: new ol.style.Style({
+          image: new ol.style.Icon({
+            src: 'round_green.png',
+            scale: 0.015
+          })
+        }),
+        Fuse: new ol.style.Style({
+          image: new ol.style.Icon({
+            src: 'round_bright_yellow.png',
+            scale: 0.015
+          })
+        }),
+        Capacitor: new ol.style.Style({
+          image: new ol.style.Icon({
+            src: 'round_blue.png',
+            scale: 0.015
+          })
+        }),
+        CircuitBreaker: new ol.style.Style({
+          image: new ol.style.Icon({
+            src: 'round_crimson.png',
+            scale: 0.015
+          })
+        }),
+        OpenBridge: new ol.style.Style({
+          image: new ol.style.Icon({
+            src: 'round_red_orange.png',
+            scale: 0.015
+          })
+        }),
+        Recloser: new ol.style.Style({
+          image: new ol.style.Icon({
+            src: 'round_red.png',
+            scale: 0.015
+          })
+        }),
+        Substation: new ol.style.Style({
+          image: new ol.style.Icon({
+            src: 'square_lt_blue.png',
+            scale: 0.04
+          })
+        }),
+        Meter: new ol.style.Style({
+          image: new ol.style.Icon({
+            src: 'round_purple.png',
+            scale: 0.01
+          })
+        }),
+        default: new ol.style.Style({
+          image: new ol.style.Icon({
+            src: 'round_orange.png',
+            scale: 0.05
+          })
+        })
+      };
+
+      var defaultPointStyle = function(feature) {
+        var style, props = feature.getProperties();
+
+        if (props.data.Category == "Switch")
+          style = pointStyles[props.data.Category + "_" + props.data.Status];
+        else
+          style = pointStyles[props.data.Category];
+
+        if (typeof style == "undefined")
+          style = pointStyles.default;
+
+        return style;
+      };
+
+      var nodes = new ol.layer.Vector({
+        source: nodeSource,
+        style: defaultPointStyle
+      });
+
+      var lines = new ol.layer.Vector({
+        source: lineSource,
+        style: defaultLineStyle
+      });
+
+      var traceResults = new ol.layer.Vector({
+        source: traceSource,
+        style: traceStyle
+      });
+
+      var tileLayer = new ol.layer.Tile({
+        source: new ol.source.BingMaps({
+          key: 'Ai5CE326gfcnFhaAub-Hi-Bbj8SeYVH1zqVoiNfhVyn0TlOHQbanzjiuSiFYc-kI',
+          imagerySet: 'AerialWithLabels'
+        })
+      });
+
+      var view = new ol.View({
+				center : ol.proj.transform([-98.493629, 29.424122], 'EPSG:4326', 'EPSG:3857'),
+				zoom : 11,
+        maxZoom: 20
+			});
+
+      map = new ol.Map({
+        layers : [
+          tileLayer,
+          nodes,
+          lines,
+          traceResults
+        ],
+        target : document.getElementById('map'),
+        view : view
+      });
+
+      map.on('moveend', function(e) {
+        var zoom = e.map.getView().getZoom();
+        console.log("Zoom: " + zoom);
+      })
+
+      var selectClick = new ol.interaction.Select();
+      map.addInteraction(selectClick);
+
+      var selectedElement;
+
+      function displayElement(elements) {
+        var desc = "<table>\n";
+        desc += "<tr><th>Name</th><th>Value</th></tr>";
+
+        $("#info").empty();
+
+        elements.forEach(function(elem) {
+          var d = elem.getProperties().data;
+
+          for (var property in d) {
+            if (d.hasOwnProperty(property)) {
+              desc += "<tr><td>" + property + "</td><td>" + d[property] + "</td></tr>";
+            }
+          }
+
+          selectedElement = elem;
+        });
+        desc += "</table>\n";
+        $("#info").append(desc);
+      }
+
+      var addMeterMode = false;
+
+      selectClick.on('select', function(e) {
+        var coord = e.mapBrowserEvent.coordinate;
+        var latlng = ol.proj.transform(coord, 'EPSG:3857', 'EPSG:4326');
+        console.log(latlng);
+
+        if (!addMeterMode)
+          displayElement(e.selected);
+
+      });
+
+      map.on('click', function(e) {
+        var coord = e.coordinate;
+        var latlng = ol.proj.transform(coord, 'EPSG:3857', 'EPSG:4326');
+        console.log(latlng);
+        if (addMeterMode) {
+          console.log("Add second point for meter at " + latlng[0] + ", " + latlng[1]);
+          $.ajax({
+            url : "/addmeter?loadid=" + selectedElement.getId() + "&lat=" + latlng[1] + "&lon=" + latlng[0],
+            type : "GET",
+            contentType : "application/json; charset=utf-8",
+            dataType : "json",
+            success : function (data) {
+              console.log(data);
+              console.log("Completed service connection");
+            },
+            error: function(err) {
+              console.log("There was an error creating the new meter connection");
+            }
+          })
+        }
+      });
+
+      function reloadData() {
+        nodeSource.clear(false);
+        lineSource.clear(false);
+        traceSource.clear(false);
+
+        $.ajax({
+          url: "/reload",
+          type: "GET",
+          success: function(data) {
+            console.log("Server reloaded ok - refreshing sources.");
+            nodeSource.refresh();
+            lineSource.refresh();
+            traceSource.refresh();
+            nodeSource.clear();
+            lineSource.clear();
+            traceSource.clear();
+          },
+          error: function(err) {
+            console.log("Server error while reloading");
+          }
+        });
+      }
+
+      function doFindElementById() {
+        var id = $("#idinput").val();
+        $.ajax({
+          url : "/gridelements?id=" + id,
+          type : "GET",
+          contentType : "application/json; charset=utf-8",
+          dataType : "json",
+          success : function (data) {
+            data.features.forEach(function(f) {
+              var id = f.id;
+
+              var aFeature = nodeSource.getFeatureById(id);
+
+              if (typeof aFeature != "undefined") {
+                view.setCenter(aFeature.getGeometry().getCoordinates());
+                view.setZoom(20);
+                displayElement([aFeature]);
+              }
+              else {
+                console.log("Could not find " + id)
+              }
+            })
+          },
+          error: function(err) {
+            console.log("There was an error fetching grid elements by id");
+          }
+        });
+      }
+
+      var el = document.getElementById("submit");
+    	if (el.addEventListener)
+    		el.addEventListener("click", doFindElementById, false);
+
+      var meterCount = 0;
+
+      function createFeaturesFromTopology(data) {
+        var fc = {
+          type: "FeatureCollection",
+          features: []
+        };
+
+        data.forEach(function(anElement) {
+          fc.features.push(anElement.root);
+
+          if (anElement.root.properties.data.Category == "Meter") {
+            console.log("Adding " + anElement.root.properties.data.Id);
+            meterCount++;
+          }
+
+          anElement.children.forEach(function(aChild) {
+            moreFeatures = createFeaturesFromTopology([aChild]);
+            moreFeatures.features.forEach(function(aFeature) {
+              fc.features.push(aFeature);
+            });
+          });
+        });
+
+        return fc;
+      }
+
+      function createTreeView(treeData, data) {
+        if (data.length > 0) {
+          data.forEach(function(anElement) {
+            var aChild = {
+              id          : anElement.root.properties.data.Id, // will be autogenerated if omitted
+              text        : anElement.root.properties.data.Category + ': ' + anElement.root.properties.data.Id, // node text
+              state       : {
+                opened    : false, // is the node open
+                disabled  : false,  // is the node disabled
+                selected  : false  // is the node selected
+              },
+              children    : []
+            };
+            treeData.children.push(aChild);
+            aChild = createTreeView(aChild, anElement.children);
+          });
+        }
+
+        return treeData;
+      }
+
+      function createTreeViewFromTopology(data) {
+        var treeData = {
+          id          : "root", // will be autogenerated if omitted
+          text        : "Root Node", // node text
+          state       : {
+            opened    : false, // is the node open
+            disabled  : false,  // is the node disabled
+            selected  : false  // is the node selected
+          },
+          children    : []
+        }
+
+        treeData = createTreeView(treeData, data);
+
+        return treeData;
+      }
+
+      function doTraceDownStream() {
+        if (typeof selectedElement != "undefined") {
+          traceSource.clear(true);
+          view.setCenter(selectedElement.getGeometry().getCoordinates());
+          view.setZoom(20);
+          displayElement([selectedElement]);
+
+          $.ajax({
+            url : "/tracedownstream?id=" + selectedElement.getId(),
+            type : "GET",
+            contentType : "application/json; charset=utf-8",
+            dataType : "json",
+            success : function (data) {
+              meterCount = 0;
+              var features = createFeaturesFromTopology(data);
+
+              var center = turf.centerOfMass(features);
+              var e = turf.envelope(features);
+              var bl = ol.proj.transform([e.geometry.coordinates[0][0][0], e.geometry.coordinates[0][0][1]], 'EPSG:4326', 'EPSG:3857');
+              var tr = ol.proj.transform([e.geometry.coordinates[0][3][0], e.geometry.coordinates[0][3][1]], 'EPSG:4326', 'EPSG:3857');
+              var ext = [bl[0], bl[1], tr[0], tr[1]];
+              traceSource.addFeatures(traceSource.getFormat().readFeatures(features));
+              view.fit(ext, {size: map.getSize(), padding: [15, 15, 15, 15]});
+              view.setCenter(ol.proj.transform(center.geometry.coordinates, 'EPSG:4326', 'EPSG:3857'));
+
+              var treeData = createTreeViewFromTopology(data);
+
+              if ($('#jstree').jstree())
+                $('#jstree').jstree().destroy();
+              var result = $('#jstree').jstree({ 'core' : {
+                  data: treeData
+                }
+              });
+              $('#jstree').on("changed.jstree", function (e, data) {
+                console.log(data.selected);
+                var selectedFeature = traceSource.getFeatureById(data.selected[0]);
+                if (selectedFeature.getGeometry().getType() == "Point")
+                  view.setCenter(selectedFeature.getGeometry().getCoordinates());
+              });
+
+              $("#meters").text(meterCount + " downstream meters affected.");
+            },
+            error: function(err) {
+              console.log("There was an error tracing downstream");
+            }
+          });
+        }
+      }
+
+      var el = document.getElementById("tracedownstream");
+    	if (el.addEventListener)
+    		el.addEventListener("click", doTraceDownStream, false);
+
+      function doAddMeter() {
+        console.log("Adding meter");
+
+        if (typeof selectedElement != "undefined") {
+          if (selectedElement.getProperties().data.Category == "Load") {
+            addMeterMode = true;
+            var loadPosition = ol.proj.transform(selectedElement.getGeometry().getCoordinates(), 'EPSG:3857', 'EPSG:4326');
+            console.log("Creating meter connection from Load at " + loadPosition);
+          }
+          else {
+            console.log("Error: Wrong type selected - must select a Load");
+          }
+        }
+        else {
+          // Must have a Load selected.
+          console.log("Error: No Load selected");
+        }
+      }
+
+      var el = document.getElementById("addmeter");
+    	if (el.addEventListener) {
+    		el.addEventListener("click", doAddMeter, false);
+      }
+
+      var el = document.getElementById("noaddmeter");
+    	if (el.addEventListener) {
+    		el.addEventListener("click", function() {
+          addMeterMode = false;
+        }, false);
+      }
+
+      var el = document.getElementById("reload");
+    	if (el.addEventListener) {
+    		el.addEventListener("click", function() {
+          reloadData();
+        }, false);
+      }
+
+      $( document ).ready(function() {
+          console.log( "ready!" );
+
+          $('#jstree').on("changed.jstree", function (e, data) {
+            console.log(data.selected);
+          });
+      });
+    </script>
+  </body>
+</html>
